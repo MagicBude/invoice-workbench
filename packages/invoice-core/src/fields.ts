@@ -18,6 +18,7 @@ export const EXPORT_FIELDS: readonly ExportFieldDefinition[] = [
   { key: 'itemName', label: '项目名称', defaultSelected: false, editable: true, type: 'text', group: 'business' },
   { key: 'remark', label: '备注', defaultSelected: true, editable: true, type: 'text', group: 'business' },
   { key: 'parseStatus', label: '解析状态', defaultSelected: false, editable: false, type: 'status', group: 'quality' },
+  { key: 'manualReviewStatus', label: '人工复核', defaultSelected: false, editable: false, type: 'status', group: 'quality' },
   { key: 'confidence', label: '置信度', defaultSelected: false, editable: false, type: 'number', group: 'quality' },
   { key: 'duplicateStatus', label: '重复状态', defaultSelected: false, editable: false, type: 'status', group: 'quality' },
   { key: 'amountValidation', label: '金额校验', defaultSelected: false, editable: false, type: 'status', group: 'quality' }

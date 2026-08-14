@@ -331,6 +331,7 @@ describe('parseInvoiceText', () => {
     });
 
     expect(record.invoiceNumber).toBe('12345678901234567890');
+    expect(record.manualReviewStatus).toBe('pending');
     expect(record.issueDate).toBe('2026-08-14');
     expect(record.buyerName).toBe('杭州测试科技有限公司');
     expect(record.sellerName).toBe('上海示例软件有限公司');

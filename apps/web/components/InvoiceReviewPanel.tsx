@@ -17,6 +17,11 @@ interface Props {
   onClose: () => void;
   onPrevious: () => void;
   onNext: () => void;
+  onPreviousAttention: () => void;
+  onNextAttention: () => void;
+  hasPreviousAttention: boolean;
+  hasNextAttention: boolean;
+  onToggleConfirmed: () => void;
 }
 
 const GROUPS: Array<{
@@ -36,6 +41,10 @@ function readonlyLabel(field: InvoiceExportKey, value: unknown): string {
     if (value === 'success') return '成功';
     if (value === 'failed') return '失败';
     return '待复核';
+  }
+
+  if (field === 'manualReviewStatus') {
+    return value === 'confirmed' ? '已确认' : '未确认';
   }
 
   if (field === 'duplicateStatus') {
@@ -62,6 +71,10 @@ function statusClass(field: InvoiceExportKey, value: unknown): string {
     if (value === 'success') return 'bg-emerald-50 text-emerald-700';
     if (value === 'failed') return 'bg-rose-50 text-rose-700';
     return 'bg-amber-50 text-amber-700';
+  }
+
+  if (field === 'manualReviewStatus') {
+    return value === 'confirmed' ? 'bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-600';
   }
 
   if (field === 'duplicateStatus' && value === 'duplicate') {
@@ -149,7 +162,12 @@ export function InvoiceReviewPanel({
   onChange,
   onClose,
   onPrevious,
-  onNext
+  onNext,
+  onPreviousAttention,
+  onNextAttention,
+  hasPreviousAttention,
+  hasNextAttention,
+  onToggleConfirmed
 }: Props) {
   const [pdfUrl, setPdfUrl] = useState('');
 
@@ -210,7 +228,24 @@ export function InvoiceReviewPanel({
             </h2>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={onPreviousAttention}
+              disabled={!hasPreviousAttention}
+              className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              上一待处理
+            </button>
+            <button
+              type="button"
+              onClick={onNextAttention}
+              disabled={!hasNextAttention}
+              className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              下一待处理
+            </button>
+            <span className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" aria-hidden="true" />
             <button
               type="button"
               onClick={onPrevious}
@@ -226,6 +261,18 @@ export function InvoiceReviewPanel({
               className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
               下一张
+            </button>
+            <button
+              type="button"
+              onClick={onToggleConfirmed}
+              disabled={record.parseStatus === 'failed'}
+              className={`rounded-lg border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40 ${
+                record.manualReviewStatus === 'confirmed'
+                  ? 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100'
+                  : 'border-emerald-700 bg-emerald-800 text-white hover:bg-emerald-700'
+              }`}
+            >
+              {record.manualReviewStatus === 'confirmed' ? '取消确认' : '确认已复核'}
             </button>
             <button
               type="button"
@@ -257,6 +304,9 @@ export function InvoiceReviewPanel({
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass('parseStatus', record.parseStatus)}`}>
                   {readonlyLabel('parseStatus', record.parseStatus)}
+                </span>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass('manualReviewStatus', record.manualReviewStatus)}`}>
+                  人工复核：{readonlyLabel('manualReviewStatus', record.manualReviewStatus)}
                 </span>
                 <span className="text-slate-500">置信度 {readonlyLabel('confidence', record.confidence)}</span>
                 <span className="text-slate-500">金额校验：{readonlyLabel('amountValidation', record.amountValidation)}</span>

@@ -52,6 +52,7 @@ export function parseInvoiceText(input: ParseInvoiceInput): InvoiceRecord {
     itemName: extractItemName(normalized),
     remark: '',
     parseStatus: 'review',
+    manualReviewStatus: 'pending',
     confidence: 0,
     duplicateStatus: 'unknown',
     amountValidation: validateAmountRelation(

@@ -9,10 +9,12 @@ import {
 
 interface Props {
   records: InvoiceRecord[];
+  totalRecordCount: number;
   selectedKeys: InvoiceExportKey[];
   onChange: (id: string, patch: Partial<InvoiceRecord>) => void;
   onDelete: (id: string) => void;
   onReview: (id: string) => void;
+  onToggleConfirmed: (id: string) => void;
 }
 
 const COLUMN_WIDTHS: Record<InvoiceExportKey, number> = {
@@ -33,6 +35,7 @@ const COLUMN_WIDTHS: Record<InvoiceExportKey, number> = {
   itemName: 256,
   remark: 224,
   parseStatus: 112,
+  manualReviewStatus: 112,
   confidence: 112,
   duplicateStatus: 112,
   amountValidation: 112
@@ -43,6 +46,12 @@ function statusClass(field: InvoiceExportKey, value: unknown): string {
     if (value === 'success') return 'bg-emerald-50 text-emerald-700';
     if (value === 'failed') return 'bg-rose-50 text-rose-700';
     return 'bg-amber-50 text-amber-700';
+  }
+
+  if (field === 'manualReviewStatus') {
+    return value === 'confirmed'
+      ? 'bg-sky-50 text-sky-700'
+      : 'bg-slate-100 text-slate-600';
   }
 
   if (field === 'duplicateStatus') {
@@ -63,6 +72,10 @@ function readonlyLabel(field: InvoiceExportKey, value: unknown): string {
     if (value === 'success') return '成功';
     if (value === 'failed') return '失败';
     return '待复核';
+  }
+
+  if (field === 'manualReviewStatus') {
+    return value === 'confirmed' ? '已确认' : '未确认';
   }
 
   if (field === 'duplicateStatus') {
@@ -119,19 +132,27 @@ function renderCell(
 }
 
 /**
- * 结果表格与“显示与导出字段”共用同一份 selectedKeys。
+ * 结果表格只接收已经过搜索、筛选和排序的 records。
  *
- * 字段勾选只是 React 状态变化：所有发票字段在首次解析时已经保存在 records 中，
- * 因此切换列只会触发表格重新渲染，不会重新读取 PDF，也不需要用户再次拖入文件。
+ * 筛选不会修改主数据；组件仍然直接编辑原始记录 id，修改结果会回写主 records，
+ * 因此切换筛选条件后仍然能看到最新数据，也无需重新解析 PDF。
  */
-export function InvoiceTable({ records, selectedKeys, onChange, onDelete, onReview }: Props) {
+export function InvoiceTable({
+  records,
+  totalRecordCount,
+  selectedKeys,
+  onChange,
+  onDelete,
+  onReview,
+  onToggleConfirmed
+}: Props) {
   const total = records.reduce((sum, record) => sum + (Number(record.amountIncludingTax) || 0), 0);
   const selectedSet = new Set(selectedKeys);
   const visibleFields = EXPORT_FIELDS.filter((field) => selectedSet.has(field.key));
   const tableMinWidth =
     56 +
     visibleFields.reduce((sum, field) => sum + COLUMN_WIDTHS[field.key], 0) +
-    136;
+    176;
 
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -139,22 +160,22 @@ export function InvoiceTable({ records, selectedKeys, onChange, onDelete, onRevi
         <div>
           <h2 className="text-base font-semibold text-slate-900">解析结果</h2>
           <p className="mt-1 text-sm text-slate-500">
-            上方勾选的字段会立即显示在这里；修改字段后导出也会使用最新数据。
+            当前视图可搜索、筛选和排序；修改字段后导出会使用最新数据。
           </p>
         </div>
         <div className="text-sm text-slate-600">
-          共 <b>{records.length}</b> 条 · 价税合计 <b>{total.toFixed(2)}</b> 元
+          当前 <b>{records.length}</b> / {totalRecordCount} 条 · 价税合计 <b>{total.toFixed(2)}</b> 元
         </div>
       </div>
 
-      {records.length === 0 ? (
+      {totalRecordCount === 0 ? (
         <div className="px-6 py-16 text-center text-sm text-slate-400">还没有数据，先添加 PDF 文件。</div>
+      ) : records.length === 0 ? (
+        <div className="px-6 py-16 text-center text-sm text-slate-400">
+          当前条件下没有匹配记录，可以清除搜索或切换状态筛选。
+        </div>
       ) : (
         <div className="max-h-[calc(100vh-16rem)] overflow-auto overscroll-contain">
-          {/*
-            表格使用独立滚动容器。字段变化时只改变列，不重新解析 PDF。
-            序号始终固定；PDF 文件名只有在用户勾选该字段时才显示并固定在左侧。
-          */}
           <table className="w-full border-collapse text-sm" style={{ minWidth: `${tableMinWidth}px` }}>
             <thead className="sticky top-0 z-20 bg-slate-100 text-slate-600">
               <tr>
@@ -177,7 +198,7 @@ export function InvoiceTable({ records, selectedKeys, onChange, onDelete, onRevi
                     </th>
                   );
                 })}
-                <th className="min-w-[8.5rem] whitespace-nowrap px-3 py-3 text-center font-semibold">操作</th>
+                <th className="min-w-[11rem] whitespace-nowrap px-3 py-3 text-center font-semibold">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -219,6 +240,19 @@ export function InvoiceTable({ records, selectedKeys, onChange, onDelete, onRevi
                         className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
                       >
                         复核
+                      </button>
+                      <button
+                        type="button"
+                        disabled={record.parseStatus === 'failed'}
+                        onClick={() => onToggleConfirmed(record.id)}
+                        className={`rounded-lg px-2.5 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40 ${
+                          record.manualReviewStatus === 'confirmed'
+                            ? 'bg-sky-50 text-sky-700 hover:bg-sky-100'
+                            : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                        title={record.parseStatus === 'failed' ? '解析失败的记录需要先补齐数据' : undefined}
+                      >
+                        {record.manualReviewStatus === 'confirmed' ? '已确认' : '确认'}
                       </button>
                       <button
                         type="button"

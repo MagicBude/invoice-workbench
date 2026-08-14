@@ -46,4 +46,13 @@ describe('buildExportMatrix', () => {
 
     expect(matrix.rows[0]).toEqual(['待复核', '重复', '异常']);
   });
+  it('把人工复核状态转换成中文', () => {
+    const record = sampleRecord();
+    record.manualReviewStatus = 'confirmed';
+
+    const matrix = buildExportMatrix([record], ['manualReviewStatus']);
+
+    expect(matrix.rows[0]).toEqual(['已确认']);
+  });
+
 });

@@ -12,6 +12,7 @@
 - `field-catalog.md`：字段目录与可选导出列设计
 - `workflow.md`：用户工作流与状态设计
 - `review-workflow.md`：单张发票复核工作流与本地 PDF 预览设计
+- `batch-review-workflow.md`：批量搜索、筛选、排序、人工确认与范围导出工作流
 
 ### `architecture/`：技术架构
 

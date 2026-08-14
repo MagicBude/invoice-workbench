@@ -25,6 +25,11 @@ function statusText(key: InvoiceExportKey, value: unknown): string | null {
     if (value === 'failed') return '失败';
   }
 
+  if (key === 'manualReviewStatus') {
+    if (value === 'confirmed') return '已确认';
+    if (value === 'pending') return '未确认';
+  }
+
   if (key === 'duplicateStatus') {
     if (value === 'unique') return '未重复';
     if (value === 'duplicate') return '重复';

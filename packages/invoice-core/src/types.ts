@@ -1,6 +1,7 @@
 export type ParseStatus = 'success' | 'review' | 'failed';
 export type DuplicateStatus = 'unique' | 'duplicate' | 'unknown';
 export type AmountValidationStatus = 'valid' | 'invalid' | 'unknown';
+export type ManualReviewStatus = 'pending' | 'confirmed';
 
 export interface InvoiceRecord {
   id: string;
@@ -21,6 +22,7 @@ export interface InvoiceRecord {
   itemName: string;
   remark: string;
   parseStatus: ParseStatus;
+  manualReviewStatus: ManualReviewStatus;
   confidence: number;
   duplicateStatus: DuplicateStatus;
   amountValidation: AmountValidationStatus;

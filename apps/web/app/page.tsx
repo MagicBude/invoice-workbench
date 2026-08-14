@@ -15,11 +15,20 @@ import { ExportColumnSelector } from '../components/ExportColumnSelector';
 import { InvoiceReviewPanel } from '../components/InvoiceReviewPanel';
 import { InvoiceTable } from '../components/InvoiceTable';
 import { ProcessingProgress, type ProcessingProgressValue } from '../components/ProcessingProgress';
+import { RecordWorkbenchToolbar } from '../components/RecordWorkbenchToolbar';
 import { UploadPanel } from '../components/UploadPanel';
 import { exportCsv, exportXlsx } from '../lib/export';
 import { extractPdfText, PdfTextExtractionError } from '../lib/pdf';
+import {
+  filterAndSortRecords,
+  needsAttention,
+  type RecordFilter,
+  type RecordSort
+} from '../lib/record-view';
 
 const EXPORT_STORAGE_KEY = 'invoice-workbench.export-columns.v1';
+
+type ExportScope = 'all' | 'filtered';
 
 function createFailedRecord(fileName: string, error: unknown): InvoiceRecord {
   const record = parseInvoiceText({ sourceFileName: fileName, text: '' });
@@ -49,6 +58,20 @@ function incrementProgress(
   };
 }
 
+const FILTER_CARDS: Array<{
+  key: RecordFilter;
+  label: string;
+  description: string;
+}> = [
+  { key: 'all', label: '全部', description: '当前批次全部记录' },
+  { key: 'success', label: '自动成功', description: '解析器自动判定成功' },
+  { key: 'review', label: '待复核', description: '尚未人工确认的待复核记录' },
+  { key: 'confirmed', label: '人工已确认', description: '已经人工核对确认' },
+  { key: 'failed', label: '处理失败', description: '未能完成有效解析' },
+  { key: 'duplicate', label: '重复记录', description: '发票号码重复' },
+  { key: 'amountInvalid', label: '金额异常', description: '金额关系校验异常' }
+];
+
 export default function HomePage() {
   const [records, setRecords] = useState<InvoiceRecord[]>([]);
   const [selectedExportKeys, setSelectedExportKeys] = useState<InvoiceExportKey[]>(DEFAULT_EXPORT_KEYS);
@@ -57,6 +80,10 @@ export default function HomePage() {
   const [progress, setProgress] = useState<ProcessingProgressValue | null>(null);
   const [sourceFiles, setSourceFiles] = useState<Map<string, File>>(() => new Map());
   const [reviewRecordId, setReviewRecordId] = useState<string | null>(null);
+  const [recordFilter, setRecordFilter] = useState<RecordFilter>('all');
+  const [recordSearch, setRecordSearch] = useState('');
+  const [recordSort, setRecordSort] = useState<RecordSort>('original');
+  const [exportScope, setExportScope] = useState<ExportScope>('all');
 
   useEffect(() => {
     try {
@@ -77,12 +104,29 @@ export default function HomePage() {
 
   const stats = useMemo(() => {
     return {
+      all: records.length,
       success: records.filter((record) => record.parseStatus === 'success').length,
-      review: records.filter((record) => record.parseStatus === 'review').length,
+      review: records.filter(
+        (record) => record.parseStatus === 'review' && record.manualReviewStatus !== 'confirmed'
+      ).length,
+      confirmed: records.filter((record) => record.manualReviewStatus === 'confirmed').length,
       failed: records.filter((record) => record.parseStatus === 'failed').length,
-      duplicate: records.filter((record) => record.duplicateStatus === 'duplicate').length
+      duplicate: records.filter((record) => record.duplicateStatus === 'duplicate').length,
+      amountInvalid: records.filter((record) => record.amountValidation === 'invalid').length
     };
   }, [records]);
+
+  const visibleRecords = useMemo(
+    () =>
+      filterAndSortRecords(records, {
+        filter: recordFilter,
+        search: recordSearch,
+        sort: recordSort
+      }),
+    [records, recordFilter, recordSearch, recordSort]
+  );
+
+  const exportRecords = exportScope === 'filtered' ? visibleRecords : records;
 
   const handleRejectedFiles = (files: File[]) => {
     if (files.length === 0) {
@@ -114,8 +158,6 @@ export default function HomePage() {
     setProgress(batchProgress);
 
     try {
-      // 批量导入采用顺序处理：发票通常只有少量页面，顺序处理可以控制内存峰值，
-      // 同时让界面逐张展示结果，单个文件失败也不会中断整个批次。
       for (let index = 0; index < files.length; index += 1) {
         const file = files[index]!;
         let record: InvoiceRecord;
@@ -131,23 +173,17 @@ export default function HomePage() {
           record = createFailedRecord(file.name, error);
         }
 
-        // 只在浏览器内存中保存 File 引用，供后续“单张复核”预览原始 PDF。
-        // File 不会因为放进 React State 而自动上传；刷新页面后这些临时引用也会自然消失。
         setSourceFiles((current) => {
           const next = new Map(current);
           next.set(record.id, file);
           return next;
         });
-
-        // 每处理完一张就写入 State，而不是等整批结束才更新。
-        // 这样处理大批量文件时，用户可以立即看到已经完成的部分结果。
         setRecords((current) => markDuplicateRecords([...current, record]));
 
         const completed = index + 1;
         batchProgress = incrementProgress(batchProgress, record, completed, files[completed]?.name ?? '');
         setProgress(batchProgress);
       }
-
     } finally {
       setBusy(false);
     }
@@ -159,16 +195,44 @@ export default function HomePage() {
         if (record.id !== id) return record;
 
         const next = { ...record, ...patch };
+        const patchKeys = Object.keys(patch);
+        const onlyManualReviewChanged =
+          patchKeys.length === 1 && patchKeys[0] === 'manualReviewStatus';
+
+        // “人工确认”是独立于自动解析状态的人工结论。单纯点击确认时，不能顺手把
+        // parseStatus 从“待复核”改成“成功”，否则会丢失解析器最初给出的风险判断。
+        if (onlyManualReviewChanged) return next;
+
+        // 人工确认代表“我已经核过当前这份数据”。一旦用户之后再次编辑字段，
+        // 原确认结果就应该失效，需要重新确认当前修改后的内容。
+        next.manualReviewStatus = 'pending';
+
         next.amountValidation = validateAmountRelation(
           next.amountExcludingTax,
           next.taxAmount,
           next.amountIncludingTax
         );
         next.confidence = calculateConfidence(next);
-        next.parseStatus = next.confidence >= 0.75 && next.amountValidation !== 'invalid' ? 'success' : 'review';
+        const stillRequiresManualReview = next.validationMessages.some((message) =>
+          ['AMOUNT_HEURISTIC_USED', 'FILENAME_AMOUNT_MISMATCH'].includes(message)
+        );
+        next.parseStatus =
+          next.confidence >= 0.75 &&
+          next.amountValidation !== 'invalid' &&
+          !stillRequiresManualReview
+            ? 'success'
+            : 'review';
         return next;
       });
       return markDuplicateRecords(updated);
+    });
+  };
+
+  const toggleConfirmed = (id: string) => {
+    const record = records.find((item) => item.id === id);
+    if (!record || record.parseStatus === 'failed') return;
+    updateRecord(id, {
+      manualReviewStatus: record.manualReviewStatus === 'confirmed' ? 'pending' : 'confirmed'
     });
   };
 
@@ -189,6 +253,9 @@ export default function HomePage() {
       setReviewRecordId(null);
       setProgress(null);
       setNotice('');
+      setRecordFilter('all');
+      setRecordSearch('');
+      setRecordSort('original');
     }
   };
 
@@ -201,6 +268,27 @@ export default function HomePage() {
   const openAdjacentReview = (offset: number) => {
     const next = records[reviewIndex + offset];
     if (next) setReviewRecordId(next.id);
+  };
+
+  const findAttentionIndex = (direction: -1 | 1): number => {
+    if (reviewIndex < 0) return -1;
+    for (
+      let index = reviewIndex + direction;
+      index >= 0 && index < records.length;
+      index += direction
+    ) {
+      if (needsAttention(records[index]!)) return index;
+    }
+    return -1;
+  };
+
+  const previousAttentionIndex = findAttentionIndex(-1);
+  const nextAttentionIndex = findAttentionIndex(1);
+
+  const resetRecordView = () => {
+    setRecordFilter('all');
+    setRecordSearch('');
+    setRecordSort('original');
   };
 
   return (
@@ -234,55 +322,104 @@ export default function HomePage() {
 
         <ProcessingProgress busy={busy} value={progress} />
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            ['识别成功', stats.success],
-            ['待复核', stats.review],
-            ['处理失败', stats.failed],
-            ['重复记录', stats.duplicate]
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-              <div className="text-sm text-slate-500">{label}</div>
-              <div className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">{value}</div>
-            </div>
-          ))}
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+          {FILTER_CARDS.map((card) => {
+            const active = recordFilter === card.key;
+            return (
+              <button
+                key={card.key}
+                type="button"
+                onClick={() => setRecordFilter(card.key)}
+                aria-pressed={active}
+                className={`rounded-2xl border px-5 py-4 text-left shadow-sm transition ${
+                  active
+                    ? 'border-emerald-700 bg-emerald-50 ring-1 ring-emerald-700/10'
+                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                }`}
+                title={card.description}
+              >
+                <div className={`text-sm ${active ? 'font-medium text-emerald-800' : 'text-slate-500'}`}>
+                  {card.label}
+                </div>
+                <div className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
+                  {stats[card.key]}
+                </div>
+              </button>
+            );
+          })}
         </section>
+
+        <RecordWorkbenchToolbar
+          search={recordSearch}
+          filter={recordFilter}
+          sort={recordSort}
+          visibleCount={visibleRecords.length}
+          totalCount={records.length}
+          onSearchChange={setRecordSearch}
+          onSortChange={setRecordSort}
+          onReset={resetRecordView}
+        />
 
         <ExportColumnSelector selected={selectedExportKeys} onChange={setSelectedExportKeys} />
 
         <section className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mr-1 flex items-center rounded-xl bg-slate-100 p-1" aria-label="导出范围">
+            <button
+              type="button"
+              onClick={() => setExportScope('all')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                exportScope === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              全部 {records.length}
+            </button>
+            <button
+              type="button"
+              onClick={() => setExportScope('filtered')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                exportScope === 'filtered' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              当前筛选 {visibleRecords.length}
+            </button>
+          </div>
           <button
             type="button"
-            disabled={!records.length || !selectedExportKeys.length || busy}
-            onClick={() => exportXlsx(records, selectedExportKeys)}
+            disabled={!exportRecords.length || !selectedExportKeys.length || busy}
+            onClick={() => exportXlsx(exportRecords, selectedExportKeys)}
             className="rounded-xl bg-emerald-800 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
             导出 Excel
           </button>
           <button
             type="button"
-            disabled={!records.length || !selectedExportKeys.length || busy}
-            onClick={() => exportCsv(records, selectedExportKeys)}
+            disabled={!exportRecords.length || !selectedExportKeys.length || busy}
+            onClick={() => exportCsv(exportRecords, selectedExportKeys)}
             className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
           >
             导出 CSV
           </button>
+          <span className="text-xs text-slate-400">
+            将导出 {exportRecords.length} 条记录；当前筛选和排序不会修改原始数据。
+          </span>
           <button
             type="button"
             disabled={busy}
             onClick={clearAll}
-            className="rounded-xl border border-transparent px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            className="ml-auto rounded-xl border border-transparent px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
           >
             清空列表
           </button>
         </section>
 
         <InvoiceTable
-          records={records}
+          records={visibleRecords}
+          totalRecordCount={records.length}
           selectedKeys={selectedExportKeys}
           onChange={updateRecord}
           onDelete={deleteRecord}
           onReview={setReviewRecordId}
+          onToggleConfirmed={toggleConfirmed}
         />
       </div>
 
@@ -296,6 +433,15 @@ export default function HomePage() {
           onClose={() => setReviewRecordId(null)}
           onPrevious={() => openAdjacentReview(-1)}
           onNext={() => openAdjacentReview(1)}
+          onPreviousAttention={() => {
+            if (previousAttentionIndex >= 0) setReviewRecordId(records[previousAttentionIndex]!.id);
+          }}
+          onNextAttention={() => {
+            if (nextAttentionIndex >= 0) setReviewRecordId(records[nextAttentionIndex]!.id);
+          }}
+          hasPreviousAttention={previousAttentionIndex >= 0}
+          hasNextAttention={nextAttentionIndex >= 0}
+          onToggleConfirmed={() => toggleConfirmed(reviewRecord.id)}
         />
       ) : null}
 
