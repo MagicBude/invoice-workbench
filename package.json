@@ -1,0 +1,12 @@
+{
+  "name": "invoice-workbench",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.15.0",
+  "scripts": {
+    "dev": "pnpm --filter @invoice-workbench/web dev",
+    "build": "pnpm --filter @invoice-workbench/web build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  }
+}

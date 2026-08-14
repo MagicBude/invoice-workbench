@@ -1,0 +1,31 @@
+{
+  "name": "@invoice-workbench/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "copy:pdf-worker": "node scripts/copy-pdf-worker.mjs",
+    "predev": "pnpm copy:pdf-worker",
+    "dev": "next dev",
+    "prebuild": "pnpm copy:pdf-worker",
+    "build": "next build",
+    "typecheck": "tsc --noEmit",
+    "test": "node -e \"console.log('Web tests: TODO')\""
+  },
+  "dependencies": {
+    "@invoice-workbench/invoice-core": "workspace:*",
+    "next": "^15.2.0",
+    "pdfjs-dist": "^4.10.38",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3"
+  }
+}
