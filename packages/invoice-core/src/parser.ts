@@ -1,13 +1,10 @@
 import {
   detectInvoiceType,
   extractAmounts,
-  extractBuyerName,
-  extractBuyerTaxId,
   extractInvoiceNumber,
   extractIssueDate,
   extractItemName,
-  extractSellerName,
-  extractSellerTaxId,
+  extractPartyFields,
   extractTaxRate
 } from './extractors';
 import { parseFilenameMetadata } from './filename';
@@ -24,10 +21,17 @@ export interface ParseInvoiceInput {
   text: string;
 }
 
+/**
+ * 将 PDF 文本层转换成统一的 InvoiceRecord。
+ *
+ * 解析采用“各字段独立提取 + 最后交叉校验”的方式：某一个字段失败时，
+ * 不会阻止其他字段继续识别，用户仍然可以在表格里人工补充或修正。
+ */
 export function parseInvoiceText(input: ParseInvoiceInput): InvoiceRecord {
   const normalized = normalizeInvoiceText(input.text);
   const filename = parseFilenameMetadata(input.sourceFileName);
   const amounts = extractAmounts(normalized);
+  const parties = extractPartyFields(normalized);
 
   const record: InvoiceRecord = {
     id: createId(),
@@ -37,10 +41,10 @@ export function parseInvoiceText(input: ParseInvoiceInput): InvoiceRecord {
     invoiceType: detectInvoiceType(normalized),
     invoiceNumber: extractInvoiceNumber(normalized),
     issueDate: extractIssueDate(normalized),
-    sellerName: extractSellerName(normalized),
-    sellerTaxId: extractSellerTaxId(normalized),
-    buyerName: extractBuyerName(normalized),
-    buyerTaxId: extractBuyerTaxId(normalized),
+    sellerName: parties.sellerName,
+    sellerTaxId: parties.sellerTaxId,
+    buyerName: parties.buyerName,
+    buyerTaxId: parties.buyerTaxId,
     amountExcludingTax: amounts.amountExcludingTax,
     taxAmount: amounts.taxAmount,
     amountIncludingTax: amounts.amountIncludingTax,
@@ -65,6 +69,10 @@ export function parseInvoiceText(input: ParseInvoiceInput): InvoiceRecord {
     return record;
   }
 
+  if (!record.invoiceNumber) record.validationMessages.push('INVOICE_NUMBER_MISSING');
+  if (!record.issueDate) record.validationMessages.push('ISSUE_DATE_MISSING');
+  if (!record.amountIncludingTax) record.validationMessages.push('TOTAL_AMOUNT_MISSING');
+
   if (amounts.usedHeuristic) {
     record.validationMessages.push('AMOUNT_HEURISTIC_USED');
   }
@@ -82,7 +90,17 @@ export function parseInvoiceText(input: ParseInvoiceInput): InvoiceRecord {
   }
 
   record.confidence = calculateConfidence(record);
-  record.parseStatus = record.confidence >= 0.75 && record.amountValidation !== 'invalid' ? 'success' : 'review';
+
+  // 启发式金额和“文件名金额不一致”都属于需要人确认的风险信号。
+  // 即使其他字段完整、数学关系也能自洽，也不应直接标记为自动识别成功。
+  const requiresManualReview = record.validationMessages.some((message) =>
+    ['AMOUNT_HEURISTIC_USED', 'FILENAME_AMOUNT_MISMATCH'].includes(message)
+  );
+
+  record.parseStatus =
+    record.confidence >= 0.75 && record.amountValidation !== 'invalid' && !requiresManualReview
+      ? 'success'
+      : 'review';
 
   return record;
 }
