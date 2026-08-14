@@ -1,3 +1,5 @@
+import { buildVisualPageText } from './pdf-layout';
+
 /**
  * PDF 文本层提取模块。
  *
@@ -97,11 +99,12 @@ export async function extractPdfText(file: File): Promise<PdfTextExtractionResul
       for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
         const page = await document.getPage(pageNumber);
         const content = await page.getTextContent();
-        const pageText = content.items
-          .map((item) => ('str' in item ? item.str : ''))
-          .filter(Boolean)
-          .join(' ')
-          .trim();
+
+        // NOTE: TextContent.items 的数组顺序来自 PDF 内容流，并不保证等于页面上的
+        // 视觉阅读顺序。发票含有双栏购销方和明细表，如果直接 join(' ')，很容易
+        // 把销售方税号拼到购买方、或把明细表头拼到项目名称。这里先按 X/Y 坐标
+        // 恢复视觉行，再交给发票规则解析。
+        const pageText = buildVisualPageText(content.items).trim();
 
         if (countMeaningfulCharacters(pageText) > 0) {
           textPageCount += 1;

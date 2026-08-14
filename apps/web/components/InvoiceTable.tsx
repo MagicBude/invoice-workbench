@@ -12,6 +12,7 @@ interface Props {
   selectedKeys: InvoiceExportKey[];
   onChange: (id: string, patch: Partial<InvoiceRecord>) => void;
   onDelete: (id: string) => void;
+  onReview: (id: string) => void;
 }
 
 const COLUMN_WIDTHS: Record<InvoiceExportKey, number> = {
@@ -123,14 +124,14 @@ function renderCell(
  * 字段勾选只是 React 状态变化：所有发票字段在首次解析时已经保存在 records 中，
  * 因此切换列只会触发表格重新渲染，不会重新读取 PDF，也不需要用户再次拖入文件。
  */
-export function InvoiceTable({ records, selectedKeys, onChange, onDelete }: Props) {
+export function InvoiceTable({ records, selectedKeys, onChange, onDelete, onReview }: Props) {
   const total = records.reduce((sum, record) => sum + (Number(record.amountIncludingTax) || 0), 0);
   const selectedSet = new Set(selectedKeys);
   const visibleFields = EXPORT_FIELDS.filter((field) => selectedSet.has(field.key));
   const tableMinWidth =
     56 +
     visibleFields.reduce((sum, field) => sum + COLUMN_WIDTHS[field.key], 0) +
-    80;
+    136;
 
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -176,7 +177,7 @@ export function InvoiceTable({ records, selectedKeys, onChange, onDelete }: Prop
                     </th>
                   );
                 })}
-                <th className="min-w-20 whitespace-nowrap px-3 py-3 text-center font-semibold">操作</th>
+                <th className="min-w-[8.5rem] whitespace-nowrap px-3 py-3 text-center font-semibold">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -211,14 +212,24 @@ export function InvoiceTable({ records, selectedKeys, onChange, onDelete }: Prop
                     );
                   })}
                   <td className="px-3 py-3 text-center">
-                    <button
-                      type="button"
-                      onClick={() => onDelete(record.id)}
-                      className="rounded-lg px-2 py-1 text-rose-600 hover:bg-rose-50"
-                      aria-label={`删除 ${record.sourceFileName}`}
-                    >
-                      ×
-                    </button>
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => onReview(record.id)}
+                        className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
+                      >
+                        复核
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(record.id)}
+                        className="rounded-lg px-2 py-1.5 text-rose-600 hover:bg-rose-50"
+                        aria-label={`删除 ${record.sourceFileName}`}
+                        title="删除"
+                      >
+                        ×
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

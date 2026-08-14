@@ -108,3 +108,23 @@ NEXT_PUBLIC_BASE_PATH=/invoice-workbench
 - 服务端数据库
 
 未来后端独立部署后，前端仍可以继续保持静态托管。
+
+## pnpm 版本冲突排查
+
+如果 GitHub Actions 在 `Setup pnpm` 阶段出现：
+
+```text
+Multiple versions of pnpm specified
+```
+
+说明工作流和根目录 `package.json` 同时指定了 pnpm 版本。
+
+本项目已经在根目录声明：
+
+```json
+"packageManager": "pnpm@10.15.0"
+```
+
+因此 `.github/workflows/pages.yml` 中的 `pnpm/action-setup` 不再单独填写 `version`，避免两个版本来源产生冲突。
+
+`build` 作业失败后，`deploy` 显示 `Skipped` 属于正常行为，因为 Pages 部署必须等待构建产物上传成功后才能继续。

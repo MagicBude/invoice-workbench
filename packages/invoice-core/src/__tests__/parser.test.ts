@@ -20,6 +20,10 @@ describe('normalizeInvoiceText', () => {
       '发票号码:1234\n价税合计:¥113.00'
     );
   });
+
+  it('保留视觉列分隔制表符', () => {
+    expect(normalizeInvoiceText('项目名称\t规格型号\t数量')).toBe('项目名称\t规格型号\t数量');
+  });
 });
 
 describe('parseFilenameMetadata', () => {
@@ -128,6 +132,85 @@ describe('购销方信息', () => {
     expect(result.buyerTaxId).toBe('91330100AAAABBBB11');
     expect(result.sellerTaxId).toBe('91310100CCCCDDDD22');
   });
+
+  it('税号标签丢失时可从名称尾部拆分购销方税号', () => {
+    const result = extractPartyFields(`
+      购买方信息 销售方信息
+      名称: 苏州示例智能科技有限公司 91320594MA1XQJBH12
+      名称: 江苏示例餐饮管理有限责任公司昆山分公司 91320583MA20R38G8E
+      项目名称 规格型号 单位 数量 单价 金额 税率/征收率 税额
+    `);
+
+    expect(result.buyerName).toBe('苏州示例智能科技有限公司');
+    expect(result.buyerTaxId).toBe('91320594MA1XQJBH12');
+    expect(result.sellerName).toBe('江苏示例餐饮管理有限责任公司昆山分公司');
+    expect(result.sellerTaxId).toBe('91320583MA20R38G8E');
+  });
+
+  it('视觉顺序双栏发票不会把销售方税号错配给购买方', () => {
+    const result = extractPartyFields(`
+      购买方信息\t销售方信息
+      名称: 斯迈孚智能科技（苏州）有限公司\t名称: 上海择程西南国际旅行社有限公司
+      统一社会信用代码/纳税人识别号: 91320594MA1XQJBH12\t统一社会信用代码/纳税人识别号: 91310105134638405A
+      项目名称\t规格型号\t单位\t数量\t单价\t金额\t税率/征收率\t税额
+    `);
+
+    expect(result).toEqual({
+      buyerName: '斯迈孚智能科技（苏州）有限公司',
+      buyerTaxId: '91320594MA1XQJBH12',
+      sellerName: '上海择程西南国际旅行社有限公司',
+      sellerTaxId: '91310105134638405A'
+    });
+  });
+
+  it('视觉双栏支持真实发票常见的全角冒号', () => {
+    const result = extractPartyFields(`
+      购买方信息\t销售方信息
+      名称：斯迈孚智能科技（苏州）有限公司\t名称：江苏示例餐饮管理有限责任公司昆山分公司
+      统一社会信用代码/纳税人识别号：91320594MA1XQJBH12\t统一社会信用代码/纳税人识别号：91320583MA20R38G8E
+      项目名称\t规格型号\t单位\t数量\t单价\t金额\t税率/征收率\t税额
+    `);
+
+    expect(result).toEqual({
+      buyerName: '斯迈孚智能科技（苏州）有限公司',
+      buyerTaxId: '91320594MA1XQJBH12',
+      sellerName: '江苏示例餐饮管理有限责任公司昆山分公司',
+      sellerTaxId: '91320583MA20R38G8E'
+    });
+  });
+
+  it('不依赖竖排购销方标题也能解析标准双栏名称和税号', () => {
+    const result = extractPartyFields(`
+      购\t销
+      买\t售
+      方\t方
+      信\t信
+      息\t息
+      名称：\t斯迈孚智能科技（苏州）有限公司\t名称：\t江苏示例餐饮管理有限责任公司昆山分公司
+      统一社会信用代码/纳税人识别号：\t91320594MA1XQJBH12\t统一社会信用代码/纳税人识别号：\t91320583MA20R38G8E
+      项目名称\t规格型号\t单位\t数量\t单价\t金额\t税率/征收率\t税额
+    `);
+
+    expect(result).toEqual({
+      buyerName: '斯迈孚智能科技（苏州）有限公司',
+      buyerTaxId: '91320594MA1XQJBH12',
+      sellerName: '江苏示例餐饮管理有限责任公司昆山分公司',
+      sellerTaxId: '91320583MA20R38G8E'
+    });
+  });
+
+  it('兼容税号标签被拆空格且没有冒号的文本层', () => {
+    const result = extractPartyFields(`
+      购买方信息 名称: 苏州示例智能科技有限公司 统 一 社 会 信 用 代 码 / 纳 税 人 识 别 号 91320594MA1XQJBH12
+      销售方信息 名称: 江苏示例餐饮管理有限责任公司昆山分公司 统 一 社 会 信 用 代 码 / 纳 税 人 识 别 号 91320583MA20R38G8E
+      项目名称 规格型号 单位 数量 单价 金额 税率/征收率 税额
+    `);
+
+    expect(result.buyerName).toBe('苏州示例智能科技有限公司');
+    expect(result.buyerTaxId).toBe('91320594MA1XQJBH12');
+    expect(result.sellerName).toBe('江苏示例餐饮管理有限责任公司昆山分公司');
+    expect(result.sellerTaxId).toBe('91320583MA20R38G8E');
+  });
 });
 
 describe('金额解析', () => {
@@ -187,6 +270,26 @@ describe('税率与项目名称', () => {
 
   it('从明确标签提取项目名称', () => {
     expect(extractItemName('项目名称: *信息技术服务*软件服务 规格型号')).toBe('*信息技术服务*软件服务');
+  });
+
+  it('从完整明细表头后提取第一条星号分类项目名称', () => {
+    expect(
+      extractItemName(
+        '项目名称 规格型号 单 位 数 量 单 价 金 额 税率/征收率 税额 *生活服务*餐费 1 247.17 247.17 6% 14.83 合计 ¥247.17 ¥14.83'
+      )
+    ).toBe('*生活服务*餐费');
+  });
+
+  it('使用视觉列边界只提取项目名称，不包含规格型号', () => {
+    expect(
+      extractItemName(
+        '项目名称\t规格型号\t单位\t数量\t单价\t金额\t税率/征收率\t税额\n*软饮料*娃哈哈纯净水596ml*24瓶\t55ml*24瓶(纸箱装整箱)\t箱\t2\t28.85\t57.70\t13%\t7.50\n合计\t54.82\t7.12'
+      )
+    ).toBe('*软饮料*娃哈哈纯净水596ml*24瓶');
+  });
+
+  it('不会把明细表头本身识别成项目名称', () => {
+    expect(extractItemName('项目名称 规格型号 单 位 数 量 单 价 金 额 税率/征收率 税额')).toBe('');
   });
 });
 

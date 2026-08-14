@@ -11,6 +11,7 @@
 - `vision.md`：产品定位、价值与边界
 - `field-catalog.md`：字段目录与可选导出列设计
 - `workflow.md`：用户工作流与状态设计
+- `review-workflow.md`：单张发票复核工作流与本地 PDF 预览设计
 
 ### `architecture/`：技术架构
 

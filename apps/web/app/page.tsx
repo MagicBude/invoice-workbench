@@ -12,6 +12,7 @@ import {
   type InvoiceRecord
 } from '@invoice-workbench/invoice-core';
 import { ExportColumnSelector } from '../components/ExportColumnSelector';
+import { InvoiceReviewPanel } from '../components/InvoiceReviewPanel';
 import { InvoiceTable } from '../components/InvoiceTable';
 import { ProcessingProgress, type ProcessingProgressValue } from '../components/ProcessingProgress';
 import { UploadPanel } from '../components/UploadPanel';
@@ -54,6 +55,8 @@ export default function HomePage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [progress, setProgress] = useState<ProcessingProgressValue | null>(null);
+  const [sourceFiles, setSourceFiles] = useState<Map<string, File>>(() => new Map());
+  const [reviewRecordId, setReviewRecordId] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -128,6 +131,14 @@ export default function HomePage() {
           record = createFailedRecord(file.name, error);
         }
 
+        // 只在浏览器内存中保存 File 引用，供后续“单张复核”预览原始 PDF。
+        // File 不会因为放进 React State 而自动上传；刷新页面后这些临时引用也会自然消失。
+        setSourceFiles((current) => {
+          const next = new Map(current);
+          next.set(record.id, file);
+          return next;
+        });
+
         // 每处理完一张就写入 State，而不是等整批结束才更新。
         // 这样处理大批量文件时，用户可以立即看到已经完成的部分结果。
         setRecords((current) => markDuplicateRecords([...current, record]));
@@ -163,14 +174,33 @@ export default function HomePage() {
 
   const deleteRecord = (id: string) => {
     setRecords((current) => markDuplicateRecords(current.filter((record) => record.id !== id)));
+    setSourceFiles((current) => {
+      const next = new Map(current);
+      next.delete(id);
+      return next;
+    });
+    if (reviewRecordId === id) setReviewRecordId(null);
   };
 
   const clearAll = () => {
     if (!records.length || window.confirm('确定清空当前解析结果？')) {
       setRecords([]);
+      setSourceFiles(new Map());
+      setReviewRecordId(null);
       setProgress(null);
       setNotice('');
     }
+  };
+
+  const reviewIndex = reviewRecordId
+    ? records.findIndex((record) => record.id === reviewRecordId)
+    : -1;
+  const reviewRecord = reviewIndex >= 0 ? records[reviewIndex] : undefined;
+  const reviewFile = reviewRecord ? sourceFiles.get(reviewRecord.id) : undefined;
+
+  const openAdjacentReview = (offset: number) => {
+    const next = records[reviewIndex + offset];
+    if (next) setReviewRecordId(next.id);
   };
 
   return (
@@ -252,8 +282,22 @@ export default function HomePage() {
           selectedKeys={selectedExportKeys}
           onChange={updateRecord}
           onDelete={deleteRecord}
+          onReview={setReviewRecordId}
         />
       </div>
+
+      {reviewRecord ? (
+        <InvoiceReviewPanel
+          record={reviewRecord}
+          file={reviewFile}
+          index={reviewIndex}
+          total={records.length}
+          onChange={updateRecord}
+          onClose={() => setReviewRecordId(null)}
+          onPrevious={() => openAdjacentReview(-1)}
+          onNext={() => openAdjacentReview(1)}
+        />
+      ) : null}
 
       <footer className="py-8 text-center text-xs text-slate-400">本地优先 · PDF.js · 规则优先 · 静态导出</footer>
     </main>

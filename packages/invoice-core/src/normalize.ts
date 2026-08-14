@@ -14,8 +14,10 @@ export function normalizeInvoiceText(input: string): string {
     .replace(/[￥]/g, '¥')
     .replace(/[—–−]/g, '-')
     .replace(/[\u200b\u200c\u200d\ufeff]/g, '')
-    .replace(/[\u00a0\u3000\t\f\v]+/g, ' ')
+    .replace(/[\u00a0\u3000\f\v]+/g, ' ')
     .replace(/ {2,}/g, ' ')
+    .replace(/ *\t */g, '\t')
+    .replace(/\t{2,}/g, '\t')
     .replace(/ *\n */g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
