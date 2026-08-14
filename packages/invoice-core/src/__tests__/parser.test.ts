@@ -100,6 +100,34 @@ describe('购销方信息', () => {
     expect(result.buyerTaxId).toBe('91330100AAAABBBB11');
     expect(result.sellerTaxId).toBe('91310100CCCCDDDD22');
   });
+
+  it('字段标签被当作名称候选时宁可留空', () => {
+    const result = extractPartyFields(`
+      购买方信息 销售方信息
+      名称: 统一社会信用代码/纳税人识别号 名称: 上海乙方有限公司
+      统一社会信用代码/纳税人识别号: 91330100AAAABBBB11
+      统一社会信用代码/纳税人识别号: 91310100CCCCDDDD22
+      项目名称 规格型号 单位 数量 单价 金额 税率 税额
+    `);
+
+    expect(result.buyerName).toBe('');
+    expect(result.sellerName).toBe('上海乙方有限公司');
+    expect(result.buyerTaxId).toBe('91330100AAAABBBB11');
+    expect(result.sellerTaxId).toBe('91310100CCCCDDDD22');
+  });
+
+  it('号码和日期拼接文本不会被识别成购销方名称', () => {
+    const result = extractPartyFields(`
+      购买方信息 名称: 26317000002598503004 2026年07月17日 纳税人识别号: 91330100AAAABBBB11
+      销售方信息 名称: 购买方信息 纳税人识别号: 91310100CCCCDDDD22
+      项目名称 规格型号 单位 数量 单价 金额 税率 税额
+    `);
+
+    expect(result.buyerName).toBe('');
+    expect(result.sellerName).toBe('');
+    expect(result.buyerTaxId).toBe('91330100AAAABBBB11');
+    expect(result.sellerTaxId).toBe('91310100CCCCDDDD22');
+  });
 });
 
 describe('金额解析', () => {
@@ -237,5 +265,20 @@ describe('parseInvoiceText', () => {
     const record = parseInvoiceText({ sourceFileName: 'scan.pdf', text: '图片' });
     expect(record.parseStatus).toBe('failed');
     expect(record.validationMessages).toContain('NO_TEXT_LAYER');
+  });
+});
+
+describe('导出字段偏好', () => {
+  it('清理未知和重复字段，并按字段注册表顺序恢复', async () => {
+    const { sanitizeExportKeys } = await import('../index');
+    expect(sanitizeExportKeys(['taxAmount', 'unknown', 'sourceFileName', 'taxAmount'])).toEqual([
+      'sourceFileName',
+      'taxAmount'
+    ]);
+  });
+
+  it('无有效字段时回退到默认导出列', async () => {
+    const { DEFAULT_EXPORT_KEYS, sanitizeExportKeys } = await import('../index');
+    expect(sanitizeExportKeys(['unknown'])).toEqual(DEFAULT_EXPORT_KEYS);
   });
 });

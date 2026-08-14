@@ -47,6 +47,64 @@ function cleanPartyName(value: string | undefined): string {
     .trim();
 }
 
+const PARTY_NAME_FORBIDDEN_TEXT = [
+  '购买方',
+  '购买方信息',
+  '销售方',
+  '销售方信息',
+  '统一社会信用代码',
+  '纳税人识别号',
+  '地址、电话',
+  '地址电话',
+  '开户行及账号',
+  '开户行',
+  '发票号码',
+  '开票日期',
+  '项目名称',
+  '规格型号',
+  '单位',
+  '数量',
+  '单价',
+  '税率',
+  '税额'
+] as const;
+
+/**
+ * 过滤购销方名称候选值。
+ *
+ * PDF.js 有时会把双栏布局的字段标签和字段值打乱，导致“名称”“购买方信息”
+ * 或税号标签本身被误当成公司名称。这里采用保守策略：宁可留空，也不把
+ * 明显的标签、日期或长数字串作为名称展示给用户。
+ */
+function sanitizePartyName(value: string | undefined): string {
+  const cleaned = cleanPartyName(value);
+  if (!cleaned) return '';
+
+  const compact = cleaned.replace(/\s+/g, '');
+  if (compact.length < 2 || compact.length > 100) return '';
+  if (compact === '名称') return '';
+
+  if (PARTY_NAME_FORBIDDEN_TEXT.some((label) => compact === label || compact.startsWith(`${label}:`))) {
+    return '';
+  }
+
+  if (PARTY_NAME_FORBIDDEN_TEXT.some((label) => compact.includes(label) && label.length >= 4)) {
+    return '';
+  }
+
+  // 公司名称或个人名称至少应包含一定数量的中文或英文字母。
+  // 这样可以拦截“2631700000...2026年...”一类号码与日期拼接结果。
+  const letterCount = (compact.match(/[A-Za-z\u3400-\u9fff]/g) ?? []).length;
+  const digitCount = (compact.match(/\d/g) ?? []).length;
+  if (letterCount < 2) return '';
+  if (digitCount >= 8 && digitCount > letterCount * 2) return '';
+
+  if (/^\d{4}[-/.]?\d{1,2}[-/.]?\d{1,2}/.test(compact)) return '';
+  if (/^\d{8,20}/.test(compact) && letterCount < 6) return '';
+
+  return cleaned;
+}
+
 function normalizeTaxId(value: string | undefined): string {
   const normalized = (value ?? '').replace(/[^0-9A-Z]/gi, '').toUpperCase();
   return normalized.length >= 15 && normalized.length <= 20 ? normalized : '';
@@ -78,7 +136,7 @@ function extractNameFromSection(section: string): string {
   const match = section.match(
     /名\s*称\s*:\s*([\s\S]{1,120}?)(?=\s*(?:统一社会信用代码\s*\/?\s*纳税人识别号|统一社会信用代码|纳税人识别号|地址\s*、?\s*电话|开户行及账号|开户行|销\s*售\s*方|购\s*买\s*方|项\s*目\s*名\s*称|货物或应税劳务|$))/
   );
-  return cleanPartyName(match?.[1]);
+  return sanitizePartyName(match?.[1]);
 }
 
 function extractTaxIdFromSection(section: string): string {
@@ -101,8 +159,10 @@ function extractAllPartyNames(region: string): string[] {
     const nextTax = findFirstIndex(region, [PARTY_TAX_LABEL], start);
     const endCandidates = [nextName, nextTax].filter((value) => value >= start);
     const end = endCandidates.length ? Math.min(...endCandidates) : region.length;
-    const value = cleanPartyName(region.slice(start, end));
-    if (value) values.push(value);
+
+    // 不过滤数组位置，只过滤当前位置的值。
+    // 双栏布局中如果购买方名称缺失，销售方名称不能因此左移成购买方名称。
+    values.push(sanitizePartyName(region.slice(start, end)));
   }
 
   return values;
@@ -110,11 +170,20 @@ function extractAllPartyNames(region: string): string[] {
 
 function extractAllPartyTaxIds(region: string): string[] {
   const values: string[] = [];
-  const pattern = /(?:统一社会信用代码\s*\/?\s*纳税人识别号|统一社会信用代码|纳税人识别号)\s*:\s*((?:[0-9A-Z]\s*){15,20})/gi;
+  const matches = [...region.matchAll(new RegExp(PARTY_TAX_LABEL.source, 'g'))];
 
-  for (const match of region.matchAll(pattern)) {
-    const value = normalizeTaxId(match[1]);
-    if (value) values.push(value);
+  for (let index = 0; index < matches.length; index += 1) {
+    const current = matches[index];
+    if (!current || current.index == null) continue;
+    const start = current.index + current[0].length;
+    const nextTax = matches[index + 1]?.index ?? region.length;
+    const nextName = findFirstIndex(region, [PARTY_NAME_LABEL], start);
+    const endCandidates = [nextTax, nextName].filter((value) => value >= start);
+    const end = endCandidates.length ? Math.min(...endCandidates) : region.length;
+    const candidate = region.slice(start, end).match(/(?:[0-9A-Z]\s*){15,20}/i)?.[0];
+
+    // 与名称一样保留槽位：第一组税号无效时，不把第二组税号补到第一组。
+    values.push(normalizeTaxId(candidate));
   }
 
   return values;

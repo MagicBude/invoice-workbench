@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   DEFAULT_EXPORT_KEYS,
+  sanitizeExportKeys,
   calculateConfidence,
   markDuplicateRecords,
   parseInvoiceText,
@@ -57,7 +58,7 @@ export default function HomePage() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(EXPORT_STORAGE_KEY);
-      if (saved) setSelectedExportKeys(JSON.parse(saved) as InvoiceExportKey[]);
+      if (saved) setSelectedExportKeys(sanitizeExportKeys(JSON.parse(saved)));
     } catch {
       // NOTE: 隐私模式或浏览器策略可能禁用 localStorage，此时继续使用默认导出列即可。
     }
@@ -246,7 +247,12 @@ export default function HomePage() {
           </button>
         </section>
 
-        <InvoiceTable records={records} onChange={updateRecord} onDelete={deleteRecord} />
+        <InvoiceTable
+          records={records}
+          selectedKeys={selectedExportKeys}
+          onChange={updateRecord}
+          onDelete={deleteRecord}
+        />
       </div>
 
       <footer className="py-8 text-center text-xs text-slate-400">本地优先 · PDF.js · 规则优先 · 静态导出</footer>

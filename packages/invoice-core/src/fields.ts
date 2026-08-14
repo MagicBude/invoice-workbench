@@ -27,6 +27,24 @@ export const DEFAULT_EXPORT_KEYS: InvoiceExportKey[] = EXPORT_FIELDS
   .filter((field) => field.defaultSelected)
   .map((field) => field.key);
 
+export const ALL_EXPORT_KEYS: InvoiceExportKey[] = EXPORT_FIELDS.map((field) => field.key);
+
+/**
+ * 清理从 localStorage 等外部来源恢复的导出字段设置。
+ *
+ * 浏览器里保存的设置可能来自旧版本，也可能被手动修改，因此不能直接断言为
+ * InvoiceExportKey[]。这里会去掉未知字段和重复字段，并始终按字段注册表顺序返回。
+ * 如果最终没有有效字段，则回退到默认导出列，保证用户始终可以正常导出。
+ */
+export function sanitizeExportKeys(value: unknown): InvoiceExportKey[] {
+  if (!Array.isArray(value)) return [...DEFAULT_EXPORT_KEYS];
+
+  const incoming = new Set(value.filter((item): item is string => typeof item === 'string'));
+  const valid = EXPORT_FIELDS.filter((field) => incoming.has(field.key)).map((field) => field.key);
+
+  return valid.length > 0 ? valid : [...DEFAULT_EXPORT_KEYS];
+}
+
 export function getExportField(key: InvoiceExportKey): ExportFieldDefinition {
   const field = EXPORT_FIELDS.find((item) => item.key === key);
   if (!field) throw new Error(`Unknown export field: ${String(key)}`);
