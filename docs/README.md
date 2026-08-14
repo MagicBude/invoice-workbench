@@ -54,3 +54,13 @@ ADR（Architecture Decision Record）用于记录不应被随意推翻的重要�
 代码负责实现，文档负责保存项目意图。
 
 如果开发者或 AI Agent 修改了架构、字段、隐私策略或发展方向，应同步修改对应文档，避免代码和设计意图逐渐脱节。
+
+## v0.1 实施与测试
+
+- [`product/v0.1-feature-spec.md`](product/v0.1-feature-spec.md)：v0.1 功能规格
+- [`product/ui-interaction-spec.md`](product/ui-interaction-spec.md)：页面与交互规范
+- [`development/v0.1-development-plan.md`](development/v0.1-development-plan.md)：开发阶段拆分
+- [`development/codex-task-prompts.md`](development/codex-task-prompts.md)：Codex 任务模板
+- [`development/comment-guidelines.md`](development/comment-guidelines.md)：注释规范
+- [`testing/v0.1-acceptance-checklist.md`](testing/v0.1-acceptance-checklist.md)：v0.1 验收清单
+- [`testing/test-data-guidelines.md`](testing/test-data-guidelines.md)：测试数据与隐私规范
