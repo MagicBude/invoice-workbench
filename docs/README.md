@@ -66,3 +66,5 @@ ADR（Architecture Decision Record）用于记录不应被随意推翻的重要�
 - [`development/comment-guidelines.md`](development/comment-guidelines.md)：注释规范
 - [`testing/v0.1-acceptance-checklist.md`](testing/v0.1-acceptance-checklist.md)：v0.1 验收清单
 - [`testing/test-data-guidelines.md`](testing/test-data-guidelines.md)：测试数据与隐私规范
+- [`testing/performance-checklist.md`](testing/performance-checklist.md)：大批量文件性能检查
+- [`release/v0.1-release-checklist.md`](release/v0.1-release-checklist.md)：v0.1.0 发布前最终检查

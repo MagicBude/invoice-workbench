@@ -27,6 +27,7 @@ import {
 } from '../lib/record-view';
 
 const EXPORT_STORAGE_KEY = 'invoice-workbench.export-columns.v1';
+const RESULT_RENDER_BATCH_SIZE = 8;
 
 type ExportScope = 'all' | 'filtered';
 
@@ -157,6 +158,28 @@ export default function HomePage() {
     };
     setProgress(batchProgress);
 
+    // 批量文件较多时，如果每解析一张就立即重算全部重复状态并复制完整 Map，
+    // 会让渲染和数组扫描次数快速增加。这里先按小批次刷新界面，整个批次结束后
+    // 再统一执行一次重复检测，既保留进度反馈，也降低几百张发票时的额外开销。
+    let pendingRecords: InvoiceRecord[] = [];
+    let pendingFiles = new Map<string, File>();
+
+    const flushPendingResults = () => {
+      if (pendingRecords.length === 0) return;
+
+      const recordsToAppend = pendingRecords;
+      const filesToAppend = pendingFiles;
+      pendingRecords = [];
+      pendingFiles = new Map();
+
+      setRecords((current) => [...current, ...recordsToAppend]);
+      setSourceFiles((current) => {
+        const next = new Map(current);
+        for (const [id, file] of filesToAppend) next.set(id, file);
+        return next;
+      });
+    };
+
     try {
       for (let index = 0; index < files.length; index += 1) {
         const file = files[index]!;
@@ -173,17 +196,21 @@ export default function HomePage() {
           record = createFailedRecord(file.name, error);
         }
 
-        setSourceFiles((current) => {
-          const next = new Map(current);
-          next.set(record.id, file);
-          return next;
-        });
-        setRecords((current) => markDuplicateRecords([...current, record]));
+        pendingRecords.push(record);
+        pendingFiles.set(record.id, file);
+
+        if (pendingRecords.length >= RESULT_RENDER_BATCH_SIZE || index === files.length - 1) {
+          flushPendingResults();
+        }
 
         const completed = index + 1;
         batchProgress = incrementProgress(batchProgress, record, completed, files[completed]?.name ?? '');
         setProgress(batchProgress);
       }
+
+      // React 的函数式 setState 会按入队顺序执行，因此这里会在最后一次 append 之后
+      // 对完整 records 统一计算重复状态。
+      setRecords((current) => markDuplicateRecords(current));
     } finally {
       setBusy(false);
     }
@@ -311,8 +338,13 @@ export default function HomePage() {
         </div>
       </header>
 
-      <div className="space-y-5">
-        <UploadPanel busy={busy} onFiles={handleFiles} onRejectedFiles={handleRejectedFiles} />
+      <div className="space-y-4">
+        <UploadPanel
+          busy={busy}
+          compact={records.length > 0 || busy}
+          onFiles={handleFiles}
+          onRejectedFiles={handleRejectedFiles}
+        />
 
         {notice ? (
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600" role="status">
@@ -322,7 +354,10 @@ export default function HomePage() {
 
         <ProcessingProgress busy={busy} value={progress} />
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+        <section
+          className="grid gap-2"
+          style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}
+        >
           {FILTER_CARDS.map((card) => {
             const active = recordFilter === card.key;
             return (
@@ -331,7 +366,7 @@ export default function HomePage() {
                 type="button"
                 onClick={() => setRecordFilter(card.key)}
                 aria-pressed={active}
-                className={`rounded-2xl border px-5 py-4 text-left shadow-sm transition ${
+                className={`min-h-[76px] rounded-2xl border px-4 py-3 text-left shadow-sm transition ${
                   active
                     ? 'border-emerald-700 bg-emerald-50 ring-1 ring-emerald-700/10'
                     : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
@@ -341,7 +376,7 @@ export default function HomePage() {
                 <div className={`text-sm ${active ? 'font-medium text-emerald-800' : 'text-slate-500'}`}>
                   {card.label}
                 </div>
-                <div className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
+                <div className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
                   {stats[card.key]}
                 </div>
               </button>
@@ -362,7 +397,7 @@ export default function HomePage() {
 
         <ExportColumnSelector selected={selectedExportKeys} onChange={setSelectedExportKeys} />
 
-        <section className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <div className="mr-1 flex items-center rounded-xl bg-slate-100 p-1" aria-label="导出范围">
             <button
               type="button"
