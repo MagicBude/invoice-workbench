@@ -13,6 +13,7 @@
 - `workflow.md`：用户工作流与状态设计
 - `review-workflow.md`：单张发票复核工作流与本地 PDF 预览设计
 - `batch-review-workflow.md`：批量搜索、筛选、排序、人工确认与范围导出工作流
+- `excel-export-design.md`：Excel 导出样式、冻结、筛选与列宽设计
 
 ### `architecture/`：技术架构
 
